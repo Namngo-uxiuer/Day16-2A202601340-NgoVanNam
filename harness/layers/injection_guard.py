@@ -47,6 +47,8 @@ nên lớp cần "chốt hạ" cuối cùng phải đứng đầu tiên.
 
 from __future__ import annotations
 
+from arena.corpus import INJECTION_CANARY
+from arena.tools import ToolResult
 from harness.middleware import Middleware
 
 #: Dấu mốc của đoạn nội dung không đáng tin trong kho tài liệu.
@@ -56,6 +58,26 @@ PLACEHOLDER = "[nội dung không đáng tin cậy đã bị loại bỏ]"
 
 
 class InjectionGuard(Middleware):
+    name = "injection_guard"
+
+    def wrap_tool_call(self, ctx, call, name, args):
+        result = call(name, args)
+        content = result.content
+        while BLOCK_START in content:
+            start = content.index(BLOCK_START)
+            end = content.find(BLOCK_END, start + len(BLOCK_START))
+            stop = len(content) if end < 0 else end + len(BLOCK_END)
+            content = content[:start] + PLACEHOLDER + content[stop:]
+        return ToolResult(ok=result.ok, content=content, error=result.error)
+
+    def after_agent(self, ctx, report):
+        answer = report.get("answer")
+        if isinstance(answer, str) and INJECTION_CANARY in answer:
+            report["answer"] = answer.replace(INJECTION_CANARY, PLACEHOLDER)
+        return report
+
+
+class _InjectionGuardStub(Middleware):
     """Coi nội dung tài liệu là dữ liệu: cách ly nó, rồi soát lại câu trả lời."""
 
     name = "injection_guard"

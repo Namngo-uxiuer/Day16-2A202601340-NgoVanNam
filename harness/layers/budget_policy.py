@@ -79,6 +79,27 @@ NUDGE = (
 
 
 class BudgetPolicy(Middleware):
+    name = "budget_policy"
+
+    def __init__(self, reserve: int = DEFAULT_RESERVE) -> None:
+        self.reserve = max(0, int(reserve))
+
+    def _spent(self, ctx) -> bool:
+        limit = ctx.max_tool_calls
+        return limit is not None and ctx.tools.calls >= limit - self.reserve
+
+    def before_model(self, ctx, messages):
+        if not self._spent(ctx):
+            return messages
+        return messages + [{"role": "user", "content": NUDGE}]
+
+    def wrap_tool_call(self, ctx, call, name, args):
+        if self._spent(ctx):
+            return ToolResult(ok=False, content="", error="tool budget reserved for submit")
+        return call(name, args)
+
+
+class _BudgetPolicyStub(Middleware):
     """Ép mô hình chốt FINAL ngay khi ngân sách công cụ đã tiêu hết."""
 
     name = "budget_policy"

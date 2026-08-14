@@ -74,6 +74,39 @@ from harness.middleware import Middleware
 
 
 class Critic(Middleware):
+    name = "critic"
+
+    def after_agent(self, ctx, report):
+        claims = report.get("claims")
+        if not isinstance(claims, list):
+            return report
+        observed = ctx.observed_text
+        docs = tuple(ctx.corpus.docs)
+        kept = []
+        for claim in claims:
+            text = claim.get("text") if isinstance(claim, dict) else None
+            if not isinstance(text, str):
+                continue
+            if text in observed:
+                kept.append(claim)
+                continue
+            parts = [part.strip() for part in text.split(" và ", 1)]
+            if len(parts) != 2 or not all(parts):
+                continue
+            matches = [next((doc for doc in docs if part in doc.body and part in observed), None) for part in parts]
+            if matches[0] and matches[1] and matches[0].doc_id != matches[1].doc_id:
+                kept.extend({**claim, "text": part, "doc_id": doc.doc_id} for part, doc in zip(parts, matches))
+                report["abstain"] = True
+        report["claims"] = kept
+        report["citations"] = list(dict.fromkeys(c["doc_id"] for c in kept if c.get("doc_id")))
+        if not kept:
+            report["abstain"] = True
+            report["answer"] = "Không đủ căn cứ trong các tài liệu đã quan sát."
+            report["citations"] = []
+        return report
+
+
+class _CriticStub(Middleware):
     """Xoá những gì bằng chứng không đỡ; abstain khi không còn gì."""
 
     name = "critic"

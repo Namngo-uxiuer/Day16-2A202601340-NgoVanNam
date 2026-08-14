@@ -63,6 +63,35 @@ from harness.middleware import Middleware
 
 
 class CitationChecker(Middleware):
+    name = "citation_checker"
+
+    def after_agent(self, ctx, report):
+        claims = report.get("claims")
+        if not isinstance(claims, list) or ctx.corpus is None:
+            return report
+        docs = tuple(ctx.corpus.docs)
+        observed = ctx.observed_text
+        citations = []
+        for claim in claims:
+            if not isinstance(claim, dict):
+                continue
+            text = claim.get("text")
+            current = ctx.corpus.get(claim.get("doc_id"))
+            source = current if current and text in current.body else None
+            if source is None:
+                source = next(
+                    (doc for doc in docs if doc.body in observed and text in doc.body),
+                    None,
+                )
+            if source is not None:
+                claim["doc_id"] = source.doc_id
+                if source.doc_id not in citations:
+                    citations.append(source.doc_id)
+        report["citations"] = citations
+        return report
+
+
+class _CitationCheckerStub(Middleware):
     """Trỏ mỗi claim về đúng tài liệu thật sự chứa câu đó."""
 
     name = "citation_checker"
